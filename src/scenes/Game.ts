@@ -1,7 +1,9 @@
-import Phaser from "phaser";
+import Phaser, { Physics } from "phaser";
 
 import { GameBackground, GameOver } from "../consts/ScenesKeys";
 import * as Colors from "../consts/Colors";
+
+import * as AudioKeys from "../consts/AudioKeys";
 
 enum GameState {
   Running,
@@ -24,9 +26,8 @@ export default class Game extends Phaser.Scene {
 
   init() {
     this.paddleRightVelocity = new Phaser.Math.Vector2(0, 0);
+    this.gameState = GameState.Running;
   }
-
-  preload() {}
 
   create() {
     this.scene.run(GameBackground);
@@ -38,18 +39,39 @@ export default class Game extends Phaser.Scene {
 
     this.physics.add.existing(this.ball);
 
+    this.ball.body.setCircle(10);
     this.ball.body.setBounce(1, 1);
+    this.ball.body.setMaxSpeed(800);
     this.ball.body.setCollideWorldBounds(true, 1, 1);
+    this.ball.body.onWorldBounds = true;
 
     this.paddleLeft = this.add.rectangle(50, 250, 30, 100, Colors.White, 1);
 
     this.physics.add.existing(this.paddleLeft, true);
-    this.physics.add.collider(this.paddleLeft, this.ball);
+    this.physics.add.collider(
+      this.paddleLeft,
+      this.ball,
+      this.handlePaddleBallCollision,
+      undefined,
+      this
+    );
 
     this.paddleRight = this.add.rectangle(750, 250, 30, 100, Colors.White, 1);
 
     this.physics.add.existing(this.paddleRight, true);
-    this.physics.add.collider(this.paddleRight, this.ball);
+    this.physics.add.collider(
+      this.paddleRight,
+      this.ball,
+      this.handlePaddleBallCollision,
+      undefined,
+      this
+    );
+
+    this.physics.world.on(
+      "worldbounds",
+      this.handleBallWorldBoundsCollision,
+      this
+    );
 
     const scoreStyle = { fontSize: "48px", fontFamily: "'Press Start 2P'" };
 
@@ -71,12 +93,32 @@ export default class Game extends Phaser.Scene {
       return;
     }
 
-    this.handlePlayerInput();
+    this.processPlayerInput();
     this.updateAi();
     this.checkScore();
   }
 
-  handlePlayerInput() {
+  handleBallWorldBoundsCollision(body, up, down, left, right) {
+    if (left || right) {
+      return;
+    }
+
+    this.sound.play(AudioKeys.PongPlop);
+  }
+
+  handlePaddleBallCollision(paddle, ball) {
+    this.sound.play(AudioKeys.PongBeep);
+
+    const body = this.ball.body;
+    const vel = body.velocity;
+
+    vel.x *= 1.05;
+    vel.y *= 1.05;
+
+    body.setVelocity(vel.x, vel.y);
+  }
+
+  processPlayerInput() {
     const speed = 10;
     const bodyL = this.paddleLeft.body as Phaser.Physics.Arcade.StaticBody;
 
@@ -98,20 +140,20 @@ export default class Game extends Phaser.Scene {
       return;
     }
 
-    if (x < leftBounds) {
+    if (this.ball.x < leftBounds) {
       this.incrementRightScore();
-    } else if (x > rightBounds) {
+    } else if (this.ball.x > rightBounds) {
       this.incrementLeftScore();
     }
 
-    const maxScore = 7;
+    const maxScore = 3;
     if (this.leftScore >= maxScore) {
       this.gameState = GameState.PlayerWon;
     } else if (this.rightScore >= maxScore) {
       this.gameState = GameState.AiWon;
     }
 
-    if (GameState.Running) {
+    if (this.gameState === GameState.Running) {
       this.resetBall();
     } else {
       this.ball.active = false;
@@ -152,12 +194,12 @@ export default class Game extends Phaser.Scene {
   }
 
   incrementLeftScore() {
-    ++this.leftScore;
+    this.leftScore += 1;
     this.leftScoreLabel.setText(this.leftScore.toLocaleString());
   }
 
   incrementRightScore() {
-    ++this.rightScore;
+    this.rightScore += 1;
     this.rightScoreLabel.setText(this.rightScore.toLocaleString());
   }
 
